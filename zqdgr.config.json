@@ -5,8 +5,8 @@
     "author": "you",
     "license": "BSL-1.0",
     "scripts": {
-        "build": "go build",
-        "dev": "go run main.go"
+        "build": "sh -c \"cd gloomi; zqdgr build\" && go build",
+        "dev": "sh -c \"cd gloomi; zqdgr build\" && go run main.go"
     },
     "pattern": "**/*.go",
     "excluded_dirs": []
