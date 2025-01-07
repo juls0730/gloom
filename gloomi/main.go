@@ -101,6 +101,18 @@ func (p *GLoomI) RegisterRoutes(router fiber.Router) {
 
 			return c.Status(fiber.StatusOK).SendString("Plugin uploaded successfully")
 		})
+
+		apiRouter.Delete("/plugins/:pluginName", func(c fiber.Ctx) error {
+			pluginName := c.Params("pluginName")
+			var response string
+			err := p.client.Call("GloomRPC.DeletePlugin", pluginName, &response)
+			if err != nil {
+				return c.Status(fiber.StatusInternalServerError).SendString("Failed to list plugins: " + err.Error())
+			}
+
+			c.Status(fiber.StatusOK).SendString(response)
+			return nil
+		})
 	}
 }
 

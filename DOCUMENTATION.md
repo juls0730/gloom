@@ -12,6 +12,12 @@ The `Plugin` interface is the main interface for plugins to implement. It has th
 - `Name()` - This method returns the name of the plugin.
 - `RegisterRoutes(router fiber.Router)` - This method is called when the plugin is loaded and is responsible for registering routes to the router.
 
+Furthermore, your plugin should export a symbol named `Plugin` that implements the `Plugin` interface. The easiest way to do this in Go is simply
+
+```go
+var Plugin MyPluginDataStruct
+```
+
 An example plugin is provided in the `plugin` directory and can be built using the following command:
 
 ```bash
@@ -22,10 +28,11 @@ This will generate a `plugin.so` file in the `plugin` directory.
 
 ## RPC
 
-GLoom exposes an RPC server on port 7143. This server is used for GLoom's plugin management system. Gloom currently provides two methods:
+GLoom exposes an RPC server on port 7143. This server is used for GLoom's plugin management system. Gloom currently provides three methods:
 
 - `ListPlugins(struct{}, reply *[]PluginData) error` - This method returns a list of all registered plugins and their domains.
 - `UploadPlugin(PluginUpload, reply *string) error` - This method uploads a plugin to GLoom. 
+- `DeletePlugin(pluginName string, reply *string) error` - This method deletes a plugin from GLoom.
 
 PluginData is a struct that looks like this:
 
@@ -54,3 +61,4 @@ GLoomI is the included plugin management interface for GLoom, it utilizes the GL
 - `POST /api/plugins` - This endpoint uploads a plugin to GLoom. it takes a multipart/form-data request with the following fields:
   - `plugin` - The plugin file to upload.
   - `domains` - A comma-separated list of domains to associate with the plugin.
+- `DELETE /api/plugins/:pluginName` - This endpoint deletes a plugin from GLoom. `pluginName` is the string returned by the `Name()` method of the plugin and is case-sensitive.

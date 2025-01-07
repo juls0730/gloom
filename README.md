@@ -1,6 +1,6 @@
 # GLoom
 
-GLoom is a plugin-based web server written in Go. GLoom's focus is to provide and simple and efficient way to host micro-web apps easily.
+GLoom is a plugin-based web app manager written in Go. GLoom's focus is to provide and simple and efficient way to host micro-web apps easily.
 
 ## Features
 

@@ -30,6 +30,7 @@ type Plugin interface {
 type PluginInstance struct {
 	Plugin Plugin
 	Name   string
+	Path   string
 	Router *fiber.App
 }
 
@@ -121,6 +122,7 @@ func (gloom *GLoom) RegisterPlugin(pluginPath string, domains []string) {
 	pluginInstance := PluginInstance{
 		Plugin: pluginLib,
 		Name:   pluginLib.Name(),
+		Path:   pluginPath,
 		Router: router,
 	}
 
@@ -129,6 +131,15 @@ func (gloom *GLoom) RegisterPlugin(pluginPath string, domains []string) {
 	for _, domain := range domains {
 		gloom.domainMap.Store(domain, pluginPtr)
 	}
+}
+
+func (gloom *GLoom) DeletePlugin(pluginName string) {
+	gloom.domainMap.Range(func(domain string, plugin *PluginInstance) bool {
+		if plugin.Name == pluginName {
+			gloom.domainMap.Delete(domain)
+		}
+		return true
+	})
 }
 
 func (gloom *GLoom) StartRPCServer() error {
@@ -197,15 +208,88 @@ type PluginUpload struct {
 
 func (rpc *GloomRPC) UploadPlugin(plugin PluginUpload, reply *string) error {
 	slog.Info("Uploading plugin", "plugin", plugin.Name, "domains", plugin.Domains)
+	var plugExists bool
+	rpc.gloom.DB.QueryRow("SELECT path FROM plugins WHERE path = ?", "plugs/"+plugin.Name).Scan(&plugExists)
+
+	var domains []string
+	if plugExists {
+		// if plugin exists, we need to not check for domains that this plug has already registered, but instead check for new domains this plugin is registering
+		domains = make([]string, 0)
+		var existingDomains []string
+		err := rpc.gloom.DB.QueryRow("SELECT domains FROM plugins WHERE path = ?", "plugs/"+plugin.Name).Scan(&existingDomains)
+		if err != nil {
+			return err
+		}
+
+		for _, domain := range existingDomains {
+			var found bool
+			for _, domainToCheck := range plugin.Domains {
+				if domain == domainToCheck {
+					found = true
+					break
+				}
+			}
+			if !found {
+				domains = append(domains, domain)
+			}
+
+			found = false
+		}
+	} else {
+		domains = plugin.Domains
+	}
+
+	for _, domain := range domains {
+		_, ok := rpc.gloom.domainMap.Load(domain)
+		if ok {
+			*reply = fmt.Sprintf("Domain %s already exists", domain)
+			return nil
+		}
+	}
+
+	// regardless of if plugin exists or not, we'll upload the file since this could be an update to an existing plugin
 	if err := os.WriteFile(fmt.Sprintf("plugs/%s", plugin.Name), plugin.Data, 0644); err != nil {
 		return err
 	}
 
-	fmt.Print("Plugin uploaded successfully")
+	fmt.Println("Plugin uploaded successfully")
+
+	if plugExists {
+		// exit out early otherwise we risk creating multiple of the same plugin and causing undefined behavior
+		*reply = "Plugin updated successfully"
+		return nil
+	}
 
 	rpc.gloom.DB.Exec("INSERT INTO plugins (path, domains) VALUES (?, ?)", "plugs/"+plugin.Name, strings.Join(plugin.Domains, ","))
 	rpc.gloom.RegisterPlugin("plugs/"+plugin.Name, plugin.Domains)
 	*reply = "Plugin uploaded successfully"
+	return nil
+}
+
+func (rpc *GloomRPC) DeletePlugin(pluginName string, reply *string) error {
+	var targetPlugin PluginInstance
+	for _, plugin := range rpc.gloom.Plugins {
+		if plugin.Name == pluginName {
+			targetPlugin = plugin
+			break
+		}
+	}
+
+	_, err := rpc.gloom.DB.Exec("DELETE FROM plugins WHERE path = ?", targetPlugin.Path)
+	if err != nil {
+		*reply = "Plugin not found"
+		return err
+	}
+
+	err = os.Remove(targetPlugin.Path)
+	if err != nil {
+		*reply = "Plugin not found"
+		return err
+	}
+
+	rpc.gloom.DeletePlugin(pluginName)
+
+	*reply = "Plugin deleted successfully"
 	return nil
 }
 
