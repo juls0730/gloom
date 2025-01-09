@@ -22,9 +22,9 @@ import (
 var embeddedAssets embed.FS
 
 type Plugin interface {
-	Init() error
-	Name() string
+	Init() (*fiber.Config, error)
 	RegisterRoutes(app fiber.Router)
+	Name() string
 }
 
 type PluginInstance struct {
@@ -70,9 +70,13 @@ func NewGloom(app *fiber.App) (*GLoom, error) {
 		fiber:     app,
 	}
 
-	plugins, err := db.Query("SELECT path, domains FROM plugins")
+	return gloom, nil
+}
+
+func (gloom *GLoom) LoadInitialPlugins() error {
+	plugins, err := gloom.DB.Query("SELECT path, domains FROM plugins")
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer plugins.Close()
 
@@ -83,40 +87,47 @@ func NewGloom(app *fiber.App) (*GLoom, error) {
 		}
 
 		if err := plugins.Scan(&plugin.Path, &plugin.Domain); err != nil {
-			return nil, err
+			return err
 		}
 
 		domains := strings.Split(plugin.Domain, ",")
 
-		gloom.RegisterPlugin(plugin.Path, domains)
+		if err := gloom.RegisterPlugin(plugin.Path, domains); err != nil {
+			slog.Warn("Failed to register plugin", "pluginPath", plugin.Path, "error", err)
+		}
 	}
 
-	return gloom, nil
+	return nil
 }
 
-func (gloom *GLoom) RegisterPlugin(pluginPath string, domains []string) {
+func (gloom *GLoom) RegisterPlugin(pluginPath string, domains []string) error {
 	slog.Info("Registering plugin", "pluginPath", pluginPath, "domains", domains)
+
 	p, err := plugin.Open(pluginPath)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	symbol, err := p.Lookup("Plugin")
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	pluginLib, ok := symbol.(Plugin)
 	if !ok {
-		panic("Plugin is not a Plugin")
+		return fmt.Errorf("plugin is not a Plugin")
 	}
 
-	err = pluginLib.Init()
+	fiberConfig, err := pluginLib.Init()
 	if err != nil {
-		panic(err)
+		return err
 	}
 
-	router := fiber.New()
+	if fiberConfig == nil {
+		fiberConfig = &fiber.Config{}
+	}
+
+	router := fiber.New(*fiberConfig)
 	pluginLib.RegisterRoutes(router)
 
 	pluginInstance := PluginInstance{
@@ -131,6 +142,8 @@ func (gloom *GLoom) RegisterPlugin(pluginPath string, domains []string) {
 	for _, domain := range domains {
 		gloom.domainMap.Store(domain, pluginPtr)
 	}
+
+	return nil
 }
 
 func (gloom *GLoom) DeletePlugin(pluginName string) {
@@ -178,7 +191,6 @@ type PluginData struct {
 	Domains []string `json:"domains"`
 }
 
-// Example RPC method: List all registered plugins
 func (rpc *GloomRPC) ListPlugins(_ struct{}, reply *[]PluginData) error {
 	var plugins []PluginData = make([]PluginData, 0)
 	var domains map[string][]string = make(map[string][]string)
@@ -260,8 +272,12 @@ func (rpc *GloomRPC) UploadPlugin(plugin PluginUpload, reply *string) error {
 		return nil
 	}
 
+	if err := rpc.gloom.RegisterPlugin("plugs/"+plugin.Name, plugin.Domains); err != nil {
+		slog.Warn("Failed to register uplaoded plguin", "pluginPath", "plugs/"+plugin.Name, "error", err)
+		*reply = "Plugin upload failed"
+		return nil
+	}
 	rpc.gloom.DB.Exec("INSERT INTO plugins (path, domains) VALUES (?, ?)", "plugs/"+plugin.Name, strings.Join(plugin.Domains, ","))
-	rpc.gloom.RegisterPlugin("plugs/"+plugin.Name, plugin.Domains)
 	*reply = "Plugin uploaded successfully"
 	return nil
 }
@@ -333,13 +349,17 @@ func main() {
 		panic("Failed to start RPC server: " + err.Error())
 	}
 
+	gloom.LoadInitialPlugins()
+
 	if os.Getenv("DISABLE_GLOOMI") != "true" {
 		hostname := os.Getenv("GLOOMI_HOSTNAME")
 		if hostname == "" {
 			hostname = "127.0.0.1"
 		}
 
-		gloom.RegisterPlugin("plugs/gloomi.so", []string{hostname})
+		if err := gloom.RegisterPlugin("plugs/gloomi.so", []string{hostname}); err != nil {
+			panic("Failed to register GLoomI: " + err.Error())
+		}
 	}
 
 	fmt.Println("Server running at http://localhost:3000")

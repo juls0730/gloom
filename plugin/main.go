@@ -4,8 +4,8 @@ import "github.com/gofiber/fiber/v3"
 
 type MyPlugin struct{}
 
-func (p *MyPlugin) Init() error {
-	return nil
+func (p *MyPlugin) Init() (*fiber.Config, error) {
+	return nil, nil
 }
 
 func (p *MyPlugin) Name() string {

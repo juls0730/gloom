@@ -14,14 +14,14 @@ type GLoomI struct {
 	client *rpc.Client
 }
 
-func (p *GLoomI) Init() error {
+func (p *GLoomI) Init() (*fiber.Config, error) {
 	// Connect to the RPC server
 	client, err := rpc.Dial("tcp", "localhost:7143")
 	if err != nil {
-		return fmt.Errorf("failed to connect to Gloom RPC server: %w", err)
+		return nil, fmt.Errorf("failed to connect to Gloom RPC server: %w", err)
 	}
 	p.client = client
-	return nil
+	return nil, nil
 }
 
 func (p *GLoomI) Name() string {
@@ -46,6 +46,7 @@ func (p *GLoomI) RegisterRoutes(router fiber.Router) {
 		apiRouter.Get("/plugins", func(c fiber.Ctx) error {
 			plugins, err := GetPlugins(p.client)
 			if err != nil {
+				fmt.Printf("plugs: %+v\n", plugins)
 				return c.Status(fiber.StatusInternalServerError).SendString("Failed to list plugins: " + err.Error())
 			}
 

@@ -2,14 +2,14 @@
 
 ## Plugins
 
-Plugins are the core of GLoom, they are responsible for handling requests and providing routes.
+Plugins are the core of GLoom, they are responsible for handling requests and providing routes. When building a plugin, it's expected that all the assets you need will be bundled with the plugin. However, you are allowed to create directories for assets like file uploads, but we urge you to create a specific directory for assets (ie a database or a public directory) to avoid cluttering the root directory of gloom.
 
 ### Plugin Interface
 
 The `Plugin` interface is the main interface for plugins to implement. It has three methods:
 
-- `Init()` - This method is called when the plugin is loaded. It is the function that is initially called when the plugin is loaded.
-- `Name()` - This method returns the name of the plugin.
+- `Init() (*fiber.Config, error)` - This method is called when the plugin is loaded. It is the function that is initially called when the plugin is loaded.
+- `Name() string` - This method returns the name of the plugin.
 - `RegisterRoutes(router fiber.Router)` - This method is called when the plugin is loaded and is responsible for registering routes to the router.
 
 Furthermore, your plugin should export a symbol named `Plugin` that implements the `Plugin` interface. The easiest way to do this in Go is simply

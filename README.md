@@ -1,6 +1,11 @@
 # GLoom
 
-GLoom is a plugin-based web app manager written in Go. GLoom's focus is to provide and simple and efficient way to host micro-web apps easily.
+GLoom is a plugin-based web app manager written in Go. GLoom's focus is to provide and simple and efficient way to host micro-web apps easily. Currently, GLoom is a fun little proof of concept, but it suffers from a few issues:
+
+- Incorrectly confgiured plugins will cause GLoom to crash
+- GLoom plugins are cannot be reloaded when they are updated
+
+As far as I see it, these issues are unfixable currently, Go Plugins __cannot__ be unloaded, and there's no way to separate GLoom plugins from the host proces, thus meaning if a plugin crashes, GLoom will crash as well.
 
 ## Features
 
