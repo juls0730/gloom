@@ -1,12 +1,16 @@
 {
-    "name": "Go Project",
+    "name": "GLoom",
     "version": "0.0.1",
-    "description": "Example description",
-    "author": "you",
-    "license": "BSL-1.0",
+    "description": "GLoom is a plugin-based web app manager",
+    "author": "juls0730",
+    "license": "MIT",
     "scripts": {
-        "build": "sh -c \"cd gloomi; zqdgr build\" && go build",
-        "dev": "sh -c \"cd gloomi; zqdgr build\" && go run main.go"
+        "build": "zqdgr build:gloomi && zqdgr build:pluginHost && go build",
+        "build:pluginHost": "sh -c \"cd pluginHost; go build -o ../host main.go\"",
+        "build:gloomi": "sh -c \"cd gloomi; zqdgr build\"",
+        "build:no-gloomi": "go build",
+        "clean": "rm -rf plugs && rm -rf host && rm -rf gloom.db && rm -rf plugin/plugin.so && rm -rf gloom",
+        "dev": "zqdgr build && ./gloom"
     },
     "pattern": "**/*.go",
     "excluded_dirs": []

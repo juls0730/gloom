@@ -1,5 +1,6 @@
-plugs/**
+plugs
 gloom
+host
 **/*.so
 .env
 gloom.db

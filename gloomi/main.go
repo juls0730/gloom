@@ -21,11 +21,9 @@ func (p *GLoomI) Init() (*fiber.Config, error) {
 		return nil, fmt.Errorf("failed to connect to Gloom RPC server: %w", err)
 	}
 	p.client = client
-	return nil, nil
-}
-
-func (p *GLoomI) Name() string {
-	return "GLoomI"
+	return &fiber.Config{
+		BodyLimit: 1024 * 1024 * 1024 * 5, // 5GB
+	}, nil
 }
 
 type PluginData struct {
@@ -95,12 +93,13 @@ func (p *GLoomI) RegisterRoutes(router fiber.Router) {
 				return c.Status(fiber.StatusInternalServerError).SendString("Failed to read plugin file: " + err.Error())
 			}
 
-			err = p.client.Call("GloomRPC.UploadPlugin", pluginUploadStruct, nil)
+			reply := new(string)
+			err = p.client.Call("GloomRPC.UploadPlugin", pluginUploadStruct, reply)
 			if err != nil {
 				return c.Status(fiber.StatusInternalServerError).SendString("Failed to upload plugin: " + err.Error())
 			}
 
-			return c.Status(fiber.StatusOK).SendString("Plugin uploaded successfully")
+			return c.Status(fiber.StatusOK).SendString(*reply)
 		})
 
 		apiRouter.Delete("/plugins/:pluginName", func(c fiber.Ctx) error {

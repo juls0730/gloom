@@ -1,18 +1,12 @@
 # GLoom
 
-GLoom is a plugin-based web app manager written in Go. GLoom's focus is to provide and simple and efficient way to host micro-web apps easily. Currently, GLoom is a fun little proof of concept, but it suffers from a few issues:
-
-- Incorrectly confgiured plugins will cause GLoom to crash
-- GLoom plugins are cannot be reloaded when they are updated
-
-As far as I see it, these issues are unfixable currently, Go Plugins __cannot__ be unloaded, and there's no way to separate GLoom plugins from the host proces, thus meaning if a plugin crashes, GLoom will crash as well.
+GLoom is a plugin-based web app manager written in Go (perhaps a pico-paas). GLoom's focus is to provide and simple and efficient way to host micro-web apps easily. Currently, GLoom is a fun little proof of concept, and now even supports unloading plugins, and gracefully handles plugins that crash, but it is not yet ready for production use, and may not ever be. GLoom is still in early development, so expect some rough edges and bugs and at its heart, GLoom is just a proof of concept, fun to write, and fun to use, but not production ready.
 
 ## Features
 
 - Plugin-based architecture
 - RPC-based communication between GLoom and plugins
 - Built-in plugin management system
-- Built-in plugin management UI
 
 ## Getting Started
 
@@ -24,22 +18,34 @@ As far as I see it, these issues are unfixable currently, Go Plugins __cannot__ 
 ### Installation
 
 1. Clone the repository:
-
-```bash
-git clone https://github.com/juls0730/gloom.git
-```
+    ```bash
+    git clone https://github.com/juls0730/gloom.git
+    ```
 
 2. Run the project:
+    ```bash
+    zqdgr run
+    ```
 
-```bash
-zqdgr run
-```
+    or if you want to build the project:
+    ```bash
+    zqdgr build
+    ```
+    
+    and if you want to build the project without the GLoom management Interface (you will not be able to manage plugins wunless you have another interface like GLoomI):
+    ```bash
+    zqdgr build:no-gloomi
+    ```
 
-or if you want to build the project:
+    and make sure to set the `DISABLE_GLOOMI` environment variable to `true` in the `.env` file.
 
-```bash
-zqdgr build
-```
+## Configuring
+
+GLoom is configured using environment variables. The following environment variables are supported:
+
+- `DEBUG` - Enables debug logging. This is a boolean value, so you can set it to any truthy value to enable debug logging.
+- `DISABLE_GLOOMI` - Disables the GLoomI plugin. This is a boolean value, so you can set it to any truthy value to disable the GLoomI plugin.
+- `PLUGINS_DIR` - The directory where plugins are stored. This is a string value, so you can set it to any directory path you want. The default value is `plugs`.
 
 ## Usage
 
