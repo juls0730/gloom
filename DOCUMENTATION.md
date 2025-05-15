@@ -55,6 +55,9 @@ type PluginUpload struct {
 }
 ```
 
+> [!IMPORTANT]
+> The Name field can only contain alphanumeric characters and underscores and dashes.
+
 ## GLoomI
 
 GLoomI is the included plugin management interface for GLoom, it utilizes the GLoom RPC, much like you would if you wanted to make your own management interface. By default, GLoomI is configured to use 127.0.0.1 as the hostname, but you con configure it to use a different hostname by setting the `GLOOMI_HOSTNAME` environment variable. The endpoints for GLoomI are as follows:

@@ -52,6 +52,7 @@ func (p *GLoomI) RegisterRoutes(router fiber.Router) {
 		})
 
 		type UploadRequest struct {
+			Name    string `form:"name"`
 			Domains string `form:"domains"`
 		}
 
@@ -63,6 +64,17 @@ func (p *GLoomI) RegisterRoutes(router fiber.Router) {
 
 			if pluginUpload.Domains == "" {
 				return c.Status(fiber.StatusBadRequest).SendString("No domains provided")
+			}
+
+			if pluginUpload.Name == "" {
+				return c.Status(fiber.StatusBadRequest).SendString("No name provided")
+			}
+
+			// check if string is alphanumeric
+			for _, char := range pluginUpload.Name {
+				if !((char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9') || char == '-' || char == '_') {
+					return c.Status(fiber.StatusBadRequest).SendString("Invalid name provided")
+				}
 			}
 
 			domains := make([]string, 0)
@@ -86,7 +98,7 @@ func (p *GLoomI) RegisterRoutes(router fiber.Router) {
 				Name    string   `json:"name"`
 				Data    []byte   `json:"data"`
 			}
-			pluginUploadStruct.Name = pluginFile.Filename
+			pluginUploadStruct.Name = pluginUpload.Name
 			pluginUploadStruct.Domains = domains
 			pluginUploadStruct.Data, err = io.ReadAll(pluginData)
 			if err != nil {

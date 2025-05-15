@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"embed"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
@@ -37,10 +38,17 @@ type PluginHost struct {
 	Domains    []string
 }
 
+type PreloadPlugin struct {
+	File    string   `json:"file"`
+	Domains []string `json:"domains"`
+}
+
 type GLoom struct {
 	// path to the pluginHost binary
 	tmpDir    string
 	pluginDir string
+
+	preloadPlugins []PreloadPlugin
 
 	plugins libs.SyncMap[string, *PluginHost]
 	hostMap libs.SyncMap[string, bool]
@@ -95,12 +103,29 @@ func NewGloom(proxyManager *ProxyManager) (*GLoom, error) {
 	}
 	slog.Debug("Wrote pluginHost", "dir", tmpDir+"/pluginHost")
 
+	var preloadPlugins []PreloadPlugin
+	preloadPluginsEnv, ok := os.LookupEnv("PRELOAD_PLUGINS")
+	if ok {
+		err = json.Unmarshal([]byte(preloadPluginsEnv), &preloadPlugins)
+		if err != nil {
+			panic(err)
+		}
+	} else {
+		preloadPlugins = []PreloadPlugin{
+			{
+				File:    "gloomi.so",
+				Domains: []string{"localhost"},
+			},
+		}
+	}
+
 	gloom := &GLoom{
-		tmpDir:       tmpDir,
-		pluginDir:    pluginsDir,
-		plugins:      libs.SyncMap[string, *PluginHost]{},
-		DB:           db,
-		ProxyManager: proxyManager,
+		tmpDir:         tmpDir,
+		pluginDir:      pluginsDir,
+		preloadPlugins: preloadPlugins,
+		plugins:        libs.SyncMap[string, *PluginHost]{},
+		DB:             db,
+		ProxyManager:   proxyManager,
 	}
 
 	return gloom, nil
@@ -108,6 +133,12 @@ func NewGloom(proxyManager *ProxyManager) (*GLoom, error) {
 
 func (gloom *GLoom) LoadInitialPlugins() error {
 	slog.Debug("Loading initial plugins")
+
+	for _, plugin := range gloom.preloadPlugins {
+		if err := gloom.RegisterPlugin(filepath.Join(gloom.pluginDir, plugin.File), plugin.File, plugin.Domains); err != nil {
+			slog.Warn("Failed to register plugin", "pluginPath", plugin.File, "error", err)
+		}
+	}
 
 	plugins, err := gloom.DB.Query("SELECT path, domains, name FROM plugins")
 	if err != nil {
@@ -272,7 +303,7 @@ func (gloom *GLoom) RegisterPlugin(pluginPath string, name string, domains []str
 		Domains:    domains,
 	}
 
-	gloom.plugins.Store(pluginPath, plugHost)
+	gloom.plugins.Store(name, plugHost)
 
 	if oldProxy != nil {
 		go func() {
@@ -367,6 +398,32 @@ type PluginUpload struct {
 }
 
 func (rpc *GloomRPC) UploadPlugin(plugin PluginUpload, reply *string) error {
+	for _, preloadPlugin := range rpc.gloom.preloadPlugins {
+		if plugin.Name == preloadPlugin.File {
+			*reply = "Plugin is preloaded"
+			return nil
+		}
+	}
+
+	if plugin.Name == "" {
+		*reply = "Plugin name cannot be empty"
+		return fmt.Errorf("plugin name cannot be empty")
+	}
+
+	for _, char := range plugin.Name {
+		if !((char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9') || char == '-' || char == '_') {
+			*reply = "Invalid plugin name"
+			return fmt.Errorf("invalid plugin name")
+		}
+	}
+
+	for _, domain := range plugin.Domains {
+		if domain == "" {
+			*reply = "Domain cannot be empty"
+			return fmt.Errorf("domain cannot be empty")
+		}
+	}
+
 	_, err := deploymentLock.Lock(plugin.Name, context.Background())
 	if err != nil && err == ErrLocked {
 		*reply = "Plugin is already being updated"
@@ -492,9 +549,11 @@ func (rpc *GloomRPC) UploadPlugin(plugin PluginUpload, reply *string) error {
 }
 
 func (rpc *GloomRPC) DeletePlugin(pluginName string, reply *string) error {
-	if pluginName == "GLoomI" {
-		*reply = "GLoomI cannot be deleted since it is not a plugin that is loaded by a user. If you wish to disable GLoomI, set DISABLE_GLOOMI=true in your .env file"
-		return nil
+	for _, preloadPlugin := range rpc.gloom.preloadPlugins {
+		if pluginName == preloadPlugin.File {
+			*reply = "Plugin is preloaded"
+			return nil
+		}
 	}
 
 	_, ok := rpc.gloom.plugins.Load(pluginName)
@@ -547,22 +606,6 @@ func main() {
 	}
 
 	gloom.LoadInitialPlugins()
-
-	enableGloomi, err := strconv.ParseBool(os.Getenv("ENABLE_GLOOMI"))
-	if err != nil {
-		enableGloomi = true
-	}
-
-	if enableGloomi {
-		hostname := os.Getenv("GLOOMI_HOSTNAME")
-		if hostname == "" {
-			hostname = "127.0.0.1"
-		}
-
-		if err := gloom.RegisterPlugin("plugs/gloomi.so", "GLoomI", []string{hostname}); err != nil {
-			panic("Failed to register GLoomI: " + err.Error())
-		}
-	}
 
 	fmt.Println("Server running at http://localhost:3000")
 	if err := gloom.ProxyManager.ListenAndServe("127.0.0.1:3000"); err != nil {

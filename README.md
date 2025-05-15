@@ -37,14 +37,17 @@ GLoom is a plugin-based web app manager written in Go (perhaps a pico-paas). GLo
     zqdgr build:no-gloomi
     ```
 
-    and make sure to set the `DISABLE_GLOOMI` environment variable to `true` in the `.env` file.
+    and make sure to clear the `PRELOAD_PLUGINS` environment variable and set it to your preferred management interface, or nothing at all if you don't want to use a management interface.
 
 ## Configuring
 
 GLoom is configured using environment variables. The following environment variables are supported:
 
 - `DEBUG` - Enables debug logging. This is a boolean value, so you can set it to any truthy value to enable debug logging.
-- `DISABLE_GLOOMI` - Disables the GLoomI plugin. This is a boolean value, so you can set it to any truthy value to disable the GLoomI plugin.
+- `PRELOAD_PLUGINS` - A json array of plugins to preload. The default value of this is `gloomi`, this is how GLoomI is loaded by default, and how replacement interfaces can be loaded. The format is in json, and the default value is:
+    ```json
+    [{"file": "gloomi.so", "domains": ["localhost"]}]
+    ```
 - `PLUGINS_DIR` - The directory where plugins are stored. This is a string value, so you can set it to any directory path you want. The default value is `plugs`.
 
 ## Usage
