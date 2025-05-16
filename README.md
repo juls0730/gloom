@@ -39,19 +39,33 @@ This project is primarily written for Linux, and has only been tested on Linux, 
     zqdgr build:gloom
     ```
 
-    and make sure to clear the `PRELOAD_PLUGINS` environment variable and set it to your preferred management interface, or nothing at all if you don't want to use a management interface.
+    This will give you the same standalone binary that you would get if you ran `zqdgr build`, but without the GLoom
+    management interface and with a blank config file.
 
 ## Configuring
 
-GLoom is configured using environment variables. The following environment variables are supported:
+GLoom is primarily configured through the config.toml file, but there are a few environment variables that can be used
+to confgiure GLoom. The following environment variables are supported: 
 
-- `DEBUG` - Enables debug logging. This is a boolean value, so you can set it to any truthy value to enable debug logging.
-- `PRELOAD_PLUGINS` - A json array of plugins to preload. The default value of this is `gloomi`, this is how GLoomI is loaded by default, and how replacement interfaces can be loaded. The format is in json, and the default value is:
-    ```json
-    [{"file": "gloomi.so", "domains": ["localhost"]}]
-    ```
-    It is not recommended to preload any plugin other than a management interface, this is because preloaded plugins are protected and cannot be updated in an green-blue fashion.
-- `PLUGINS_DIR` - The directory where plugins are stored. This is a string value, so you can set it to any directory path you want. The default value is `plugs`.
+- `DEBUG` - Enables debug logging. This is a boolean value, so you can set it to any truthy value to enable debug
+  logging.
+- `GLOOM_DIR` - The directory where GLoom stores its data. plugins will be stored in this directory, the GLoom config
+  will be stored in this directory, and the pluginHost binary will be unpacked into this directory. the default value is
+  `$XDG_DATA_HOME/gloom` if it exists, otherwise `$HOME/.local/share/gloom`.
+
+GLoom will also use a config file in the `GLOOM_DIR` to configure plugins and other settings. The config file is a toml file, and the default config is:
+
+```toml
+[[plugins]]
+file = "gloomi.so"
+domains = ["localhost"]
+```
+
+The `[[plugins]]` array is a list of plugins to preload. Each plugin is an object with the following fields:
+
+- `file` - The path to the plugin file. This is a string value.
+- `domains` - An array of domains to forward requests to this plugin. This is an array of strings.
+
 
 ## Usage
 

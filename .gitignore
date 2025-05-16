@@ -1,6 +1,4 @@
 plugs
-gloom
-host
+dist
 **/*.so
-.env
-gloom.db
+gloomd

@@ -23,4 +23,6 @@ To run the plugin host, run the following command:
 
 - `pluginPath` - The path to the plugin to load.
 - `socketPath` - The path to the socket that the plugin will use to listen for http requests through.
-- `controlPath` - (Optional) The path to the control socket. If not provided, the host will not send errors or status messages to the control socket and instead log them to stdout and stderr.
+- `controlPath` - (Optional) The path to the control socket. If not provided, the host will not send errors or status
+  messages to the control socket and instead log them to stdout and stderr. This connection is destroyed when a message
+  is sent to the socket.

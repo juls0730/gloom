@@ -5,7 +5,7 @@
     "author": "juls0730",
     "license": "MIT",
     "scripts": {
-        "build": "go build -buildmode=plugin -o ../plugs/gloomi.so main.go"
+        "build": "go build -ldflags '-w -s' -buildmode=plugin -o ../dist/gloomi.so main.go" 
     },
     "pattern": "**/*.go",
     "excluded_dirs": []
