@@ -33,7 +33,6 @@ func init() {
 type Plugin interface {
 	Init() (*fiber.Config, error)
 	RegisterRoutes(app fiber.Router)
-	// Name() string
 }
 
 type PluginInstance struct {
@@ -41,12 +40,6 @@ type PluginInstance struct {
 	Name   string
 	Path   string
 	Router *fiber.App
-}
-
-// Init is the entry point for a container process
-func (p *PluginInstance) Run(pluginName string) {
-	log.Printf("Starting container with plugin %s", pluginName)
-	// Load and initialize the plugin here
 }
 
 func main() {

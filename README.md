@@ -1,6 +1,6 @@
 # GLoom
 
-GLoom is a plugin-based web app manager written in Go (perhaps a pico-paas). GLoom's focus is to provide and simple and efficient way to host micro-web apps easily. Currently, GLoom is a fun little proof of concept, and now even supports unloading plugins, and gracefully handles plugins that crash, but it is not yet ready for production use, and may not ever be. GLoom is still in early development, so expect some rough edges and bugs and at its heart, GLoom is just a proof of concept, fun to write, and fun to use, but not production ready.
+GLoom is a plugin-based web app manager written in Go (perhaps a pico-paas). GLoom's focus is to provide and simple and efficient way to host micro-web apps easily. Currently, GLoom is a fun little proof of concept, and now even supports unloading plugins, and gracefully handles plugins that crash, but it is not yet ready for production use, and may not ever be. GLoom is still in early development, so expect some rough edges and bugs and at its heart, GLoom is just a proof of concept, fun to write, and fun to use, but not production ready. If you want a more stable and production ready web app manager, check out my other project, [Flux](https://github.com/juls0730/flux) ;). 
 
 ## Features
 
@@ -14,6 +14,8 @@ GLoom is a plugin-based web app manager written in Go (perhaps a pico-paas). GLo
 
 - Go 1.20 or higher
 - [zqdgr](https://github.com/juls0730/zqdgr)
+
+This project is primarily written for Linux, and has only been tested on Linux, you might have luck with other operating systems, but it is not guaranteed to work, feel free to open an issue if you encounter any problems.
 
 ### Installation
 
@@ -32,9 +34,9 @@ GLoom is a plugin-based web app manager written in Go (perhaps a pico-paas). GLo
     zqdgr build
     ```
     
-    and if you want to build the project without the GLoom management Interface (you will not be able to manage plugins wunless you have another interface like GLoomI):
+    and if you want to build the project without the GLoom management Interface (you will not be able to manage plugins wunless you have another interface like GLoomI or mark all the plugins you want to use as preloaded):
     ```bash
-    zqdgr build:no-gloomi
+    zqdgr build:gloom
     ```
 
     and make sure to clear the `PRELOAD_PLUGINS` environment variable and set it to your preferred management interface, or nothing at all if you don't want to use a management interface.
@@ -48,6 +50,7 @@ GLoom is configured using environment variables. The following environment varia
     ```json
     [{"file": "gloomi.so", "domains": ["localhost"]}]
     ```
+    It is not recommended to preload any plugin other than a management interface, this is because preloaded plugins are protected and cannot be updated in an green-blue fashion.
 - `PLUGINS_DIR` - The directory where plugins are stored. This is a string value, so you can set it to any directory path you want. The default value is `plugs`.
 
 ## Usage
@@ -60,4 +63,4 @@ Contributions are welcome!
 
 ## License
 
-GLoom is licensed under the MIT License.
+GLoom is licensed under the MIT License and ever file is licensed under it unless otherwise specified.

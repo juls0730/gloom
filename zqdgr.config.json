@@ -5,10 +5,10 @@
     "author": "juls0730",
     "license": "MIT",
     "scripts": {
-        "build": "zqdgr build:gloomi && zqdgr build:pluginHost && go build",
+        "build": "zqdgr build:gloomi && zqdgr build:gloom",
         "build:pluginHost": "sh -c \"cd pluginHost; go build -o ../host main.go\"",
         "build:gloomi": "sh -c \"cd gloomi; zqdgr build\"",
-        "build:no-gloomi": "go build",
+        "build:gloom": "zqdgr build:pluginHost && go build",
         "clean": "rm -rf plugs && rm -rf host && rm -rf gloom.db && rm -rf plugin/plugin.so && rm -rf gloom",
         "dev": "zqdgr build && ./gloom"
     },

@@ -60,7 +60,7 @@ type PluginUpload struct {
 
 ## GLoomI
 
-GLoomI is the included plugin management interface for GLoom, it utilizes the GLoom RPC, much like you would if you wanted to make your own management interface. By default, GLoomI is configured to use 127.0.0.1 as the hostname, but you con configure it to use a different hostname by setting the `GLOOMI_HOSTNAME` environment variable. The endpoints for GLoomI are as follows:
+GLoomI is the included plugin management interface for GLoom, it utilizes the GLoom RPC, much like you would if you wanted to make your own management interface. By default, GLoomI is configured to use localhost as the hostname, but you con configure it to use a different hostname by changing the `PRELOADED_PLUGINS` environment variable, as describe in the [README](README.md). The endpoints for GLoomI are as follows:
 
 - `GET /api/plugins` - This endpoint returns a list of all registered plugins and their domains.
 - `POST /api/plugins` - This endpoint uploads a plugin to GLoom. it takes a multipart/form-data request with the following fields:

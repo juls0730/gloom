@@ -1,9 +1,9 @@
 {
-    "name": "Go Project",
+    "name": "GLoomI",
     "version": "0.0.1",
-    "description": "Example description",
-    "author": "you",
-    "license": "BSL-1.0",
+    "description": "GLoomI is the included plugin management interface for GLoom",
+    "author": "juls0730",
+    "license": "MIT",
     "scripts": {
         "build": "go build -buildmode=plugin -o ../plugs/gloomi.so main.go"
     },
