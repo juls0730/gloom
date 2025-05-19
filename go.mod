@@ -3,7 +3,6 @@ module github.com/juls0730/gloom
 go 1.24.2
 
 require (
-	github.com/joho/godotenv v1.5.1
 	github.com/juls0730/sentinel v0.0.0-20250515154110-2e7e6586cacd
 	github.com/mattn/go-sqlite3 v1.14.24
 )

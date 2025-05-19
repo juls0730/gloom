@@ -44,7 +44,7 @@ func (p *GLoomI) RegisterRoutes(router fiber.Router) {
 		apiRouter.Get("/plugins", func(c fiber.Ctx) error {
 			plugins, err := GetPlugins(p.client)
 			if err != nil {
-				fmt.Printf("plugs: %+v\n", plugins)
+				fmt.Printf("Loaded plugins: %+v\n", plugins)
 				return c.Status(fiber.StatusInternalServerError).SendString("Failed to list plugins: " + err.Error())
 			}
 

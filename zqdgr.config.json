@@ -10,7 +10,7 @@
         "build:gloomi": "sh -c \"cd gloomi; zqdgr build\"",
         "build:gloom": "zqdgr build:pluginHost && go build -tags=gloomi -o dist/gloom",
         "build:nogloomi": "zqdgr build:pluginHost && go build -tags=!gloomi -o dist/gloom",
-        "clean": "rm -rf plugs && rm -rf dist && rm -rf plugin/plugin.so",
+        "clean": "rm -rf dist && rm -rf plugin/plugin.so",
         "dev": "zqdgr build && ./dist/gloom"
     },
     "pattern": "**/*.go",

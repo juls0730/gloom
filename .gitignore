@@ -1,4 +1,3 @@
-plugs
 dist
 **/*.so
 gloomd

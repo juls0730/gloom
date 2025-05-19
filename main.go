@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
-	"github.com/joho/godotenv"
 	"github.com/juls0730/gloom/libs"
 	"github.com/juls0730/sentinel"
 	_ "github.com/mattn/go-sqlite3"
@@ -40,6 +39,8 @@ type PreloadPlugin struct {
 	File    string   `json:"file"`
 	Domains []string `json:"domains"`
 }
+
+const DEFAULT_PLUGIN_DIR = "plugs"
 
 type GLoom struct {
 	// path to the /tmp directory where the pluginHost binary is unpacked, and where the pluginHost sockets are created
@@ -99,26 +100,6 @@ func NewGloom(proxyManager *sentinel.ProxyManager) (*GLoom, error) {
 		return nil, err
 	}
 
-	pluginDir := filepath.Join(gloomDir, "plugs")
-	if err := os.MkdirAll(pluginDir, 0755); err != nil {
-		return nil, err
-	}
-
-	// if gloomi is built into the binary
-	if _, err := embeddedAssets.Open("dist/gloomi.so"); err == nil {
-		// and if the plugin doesn't exist, copy it over
-		if _, err := os.Stat(filepath.Join(pluginDir, "gloomi.so")); os.IsNotExist(err) {
-			gloomiData, err := embeddedAssets.ReadFile("dist/gloomi.so")
-			if err != nil {
-				return nil, err
-			}
-
-			if err := os.WriteFile(filepath.Join(pluginDir, "gloomi.so"), gloomiData, 0755); err != nil {
-				return nil, err
-			}
-		}
-	}
-
 	tmpDir, err := os.MkdirTemp(os.TempDir(), "gloom")
 	if err != nil {
 		return nil, err
@@ -135,7 +116,6 @@ func NewGloom(proxyManager *sentinel.ProxyManager) (*GLoom, error) {
 	gloom := &GLoom{
 		tmpDir:       tmpDir,
 		gloomDir:     gloomDir,
-		pluginDir:    pluginDir,
 		plugins:      libs.SyncMap[string, *PluginHost]{},
 		DB:           db,
 		ProxyManager: proxyManager,
@@ -143,6 +123,26 @@ func NewGloom(proxyManager *sentinel.ProxyManager) (*GLoom, error) {
 
 	if err := gloom.loadConfig(); err != nil {
 		return nil, err
+	}
+
+	if err := os.MkdirAll(gloom.pluginDir, 0755); err != nil {
+		return nil, err
+	}
+
+	// if gloomi is built into the binary
+	if _, err := embeddedAssets.Open("dist/gloomi.so"); err == nil {
+		// and if the plugin doesn't exist, copy it over
+		// TODO: instead, check if the plugin doesnt exist OR the binary has a newer timestamp than the current version
+		if _, err := os.Stat(filepath.Join(gloom.pluginDir, "gloomi.so")); os.IsNotExist(err) {
+			gloomiData, err := embeddedAssets.ReadFile("dist/gloomi.so")
+			if err != nil {
+				return nil, err
+			}
+
+			if err := os.WriteFile(filepath.Join(gloom.pluginDir, "gloomi.so"), gloomiData, 0755); err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	return gloom, nil
@@ -167,6 +167,14 @@ func (gloom *GLoom) loadConfig() error {
 	if err != nil {
 		return err
 	}
+
+	var ok bool
+	gloom.pluginDir, ok = config.(map[string]any)["pluginDir"].(string)
+	if !ok || gloom.pluginDir == "" {
+		gloom.pluginDir = DEFAULT_PLUGIN_DIR
+	}
+
+	gloom.pluginDir = filepath.Join(gloom.gloomDir, gloom.pluginDir)
 
 	proloadPlugins, ok := config.(map[string]any)["plugins"].([]map[string]any)
 	if ok {
@@ -596,14 +604,8 @@ func (rpc *GloomRPC) UploadPlugin(plugin PluginUpload, reply *string) error {
 		}
 	}
 
-	plugsDir := "plugs"
-
-	if os.Getenv("PLUGINS_DIR") != "" {
-		plugsDir = os.Getenv("PLUGINS_DIR")
-	}
-
-	if _, err := os.Stat(plugsDir); os.IsNotExist(err) {
-		if err := os.Mkdir(plugsDir, 0755); err != nil {
+	if _, err := os.Stat(rpc.gloom.pluginDir); os.IsNotExist(err) {
+		if err := os.Mkdir(rpc.gloom.pluginDir, 0755); err != nil {
 			*reply = "Plugin upload failed"
 			return err
 		}
@@ -666,12 +668,6 @@ func (rpc *GloomRPC) DeletePlugin(pluginName string, reply *string) error {
 
 	*reply = "Plugin deleted successfully"
 	return nil
-}
-
-func init() {
-	if err := godotenv.Load(); err != nil {
-		fmt.Println("No .env file found")
-	}
 }
 
 func main() {
