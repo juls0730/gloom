@@ -277,7 +277,7 @@ func (gloom *GLoom) RegisterPlugin(pluginPath string, name string, domains []str
 	slog.Debug("Starting pluginHost", "pluginPath", pluginPath)
 
 	processPath := path.Join(gloom.gloomDir, "pluginHost")
-	args := []string{pluginPath, socketPath}
+	args := []string{"--plugin-path", pluginPath, "--socket-path", socketPath}
 
 	cmd := exec.Command(processPath, args...)
 	stderrPipe, err := cmd.StderrPipe()

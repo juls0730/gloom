@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -15,23 +16,11 @@ import (
 
 var pluginPath string
 var socketPath string
+
+// Idk why I originally wrote this solution when stderr is literally just the best solution for me, but this
+// makes the pluginHost more generally useful outside of GLoom, so I'm keeping it
+// TODO: maybe make it a compiler flag, though I'm sure its not making the binary *that* much bigger
 var controlPath string
-
-func init() {
-	if len(os.Args) < 3 {
-		fmt.Fprintf(os.Stderr, "Usage: pluginHost <pluginPath> <socketPath> [controlPath]")
-		os.Exit(1)
-	}
-
-	pluginPath = os.Args[1]
-	socketPath = os.Args[2]
-	// Idk why I originally wrote this solution when stderr is literally just the best solution for me, but this
-	// makes the pluginHost more generally useful outside of GLoom, so I'm keeping it
-	// TODO: maybe make it a compiler flag, though I'm sure its not making the binary *that* much bigger
-	if len(os.Args) > 3 {
-		controlPath = os.Args[3]
-	}
-}
 
 type Plugin interface {
 	Init() (*fiber.Config, error)
@@ -72,6 +61,32 @@ func main() {
 
 		os.Exit(0)
 	}()
+
+	fs := flag.NewFlagSet("pluginHost", flag.ExitOnError)
+	fs.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage: pluginHost <pluginPath> <socketPath> [controlPath]")
+	}
+
+	fs.StringVar(&pluginPath, "plugin-path", "", "Path to the plugin")
+	fs.StringVar(&socketPath, "socket-path", "", "Path to the socket")
+	fs.StringVar(&controlPath, "control-path", "", "Path to the control socket")
+
+	err := fs.Parse(os.Args[1:])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error parsing arguments: %v", err)
+		os.Exit(1)
+	}
+	os.Args = fs.Args()
+
+	if pluginPath == "" {
+		fmt.Fprintf(os.Stderr, "Error: plugin path not specified")
+		os.Exit(1)
+	}
+
+	if socketPath == "" {
+		fmt.Fprintf(os.Stderr, "Error: socket path not specified")
+		os.Exit(1)
+	}
 
 	var Print = func(format string, args ...any) {
 		fmt.Fprintf(os.Stderr, format, args...)
