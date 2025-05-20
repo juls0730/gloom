@@ -19,12 +19,15 @@ var controlPath string
 
 func init() {
 	if len(os.Args) < 3 {
-		fmt.Fprintf(os.Stderr, "Usage: pluginHost <pluginPath> <socketPath>")
+		fmt.Fprintf(os.Stderr, "Usage: pluginHost <pluginPath> <socketPath> [controlPath]")
 		os.Exit(1)
 	}
 
 	pluginPath = os.Args[1]
 	socketPath = os.Args[2]
+	// Idk why I originally wrote this solution when stderr is literally just the best solution for me, but this
+	// makes the pluginHost more generally useful outside of GLoom, so I'm keeping it
+	// TODO: maybe make it a compiler flag, though I'm sure its not making the binary *that* much bigger
 	if len(os.Args) > 3 {
 		controlPath = os.Args[3]
 	}

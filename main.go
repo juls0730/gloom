@@ -273,43 +273,24 @@ func (gloom *GLoom) RegisterPlugin(pluginPath string, name string, domains []str
 
 	pathStr := strconv.FormatUint(uint64(rand.Uint64()), 16)
 	socketPath := path.Join(gloom.tmpDir, pathStr+".sock")
-	controlPath := path.Join(gloom.tmpDir, pathStr+"-control.sock")
 
-	slog.Debug("Starting pluginHost", "pluginPath", pluginPath, "socketPath", socketPath, "controlPath", controlPath)
+	slog.Debug("Starting pluginHost", "pluginPath", pluginPath)
 
 	processPath := path.Join(gloom.gloomDir, "pluginHost")
-	args := []string{pluginPath, socketPath, controlPath}
+	args := []string{pluginPath, socketPath}
 
 	cmd := exec.Command(processPath, args...)
+	stderrPipe, err := cmd.StderrPipe()
+	if err != nil {
+		return fmt.Errorf("failed to get stderr pipe: %w", err)
+	}
+
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start pluginHost: %w", err)
 	}
 	process := cmd.Process
 
-	timeout := time.After(5 * time.Second)
-
-	for {
-		select {
-		case <-timeout:
-			_ = process.Signal(os.Interrupt)
-			return fmt.Errorf("timed out waiting for pluginHost to start (this is likely a GLoom bug)")
-		default:
-		}
-		_, err := os.Stat(controlPath)
-		if err == nil {
-			break
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-
-	conn, err := net.DialTimeout("unix", controlPath, 5*time.Second)
-	if err != nil {
-		_ = process.Signal(os.Interrupt)
-		return fmt.Errorf("failed to connect to plugin control socket: %w", err)
-	}
-	defer conn.Close()
-
-	reader := bufio.NewReader(conn)
+	reader := bufio.NewReader(stderrPipe)
 	readTimeout := time.After(30 * time.Second)
 
 	select {
