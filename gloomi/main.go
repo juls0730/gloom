@@ -16,13 +16,13 @@ type GLoomI struct {
 
 func (p *GLoomI) Init() (*fiber.Config, error) {
 	// Connect to the RPC server
-	client, err := rpc.Dial("tcp", "localhost:7143")
+	client, err := rpc.Dial("tcp", "127.0.0.1:7143")
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Gloom RPC server: %w", err)
 	}
 	p.client = client
 	return &fiber.Config{
-		BodyLimit: 1024 * 1024 * 1024 * 5, // 5GB
+		BodyLimit: 1024 * 1024 * 1024 * 5, // 5GiB
 	}, nil
 }
 
@@ -94,10 +94,12 @@ func (p *GLoomI) RegisterRoutes(router fiber.Router) {
 			}
 
 			var pluginUploadStruct struct {
-				Domains []string `json:"domains"`
-				Name    string   `json:"name"`
-				Data    []byte   `json:"data"`
+				FileName string   `json:"fileName"`
+				Name     string   `json:"name"`
+				Domains  []string `json:"domains"`
+				Data     []byte   `json:"data"`
 			}
+			pluginUploadStruct.FileName = pluginFile.Filename
 			pluginUploadStruct.Name = pluginUpload.Name
 			pluginUploadStruct.Domains = domains
 			pluginUploadStruct.Data, err = io.ReadAll(pluginData)

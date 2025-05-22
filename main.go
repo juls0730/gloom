@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log"
 	"log/slog"
 	"math/rand/v2"
 	"net"
@@ -23,7 +24,49 @@ import (
 	"github.com/juls0730/gloom/libs"
 	"github.com/juls0730/sentinel"
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/syndtr/gocapability/capability"
 )
+
+func hasChrootAbility() bool {
+	cap, err := capability.NewPid2(0)
+	if err != nil {
+		return false
+	}
+
+	err = cap.Load()
+	if err != nil {
+		return false
+	}
+
+	return cap.Get(capability.EFFECTIVE, capability.CAP_SYS_CHROOT) || cap.Get(capability.PERMITTED, capability.CAP_SYS_CHROOT)
+}
+
+func hasChangeUserAbility() bool {
+	cap, err := capability.NewPid2(0)
+	if err != nil {
+		return false
+	}
+
+	err = cap.Load()
+	if err != nil {
+		return false
+	}
+
+	permitted := true
+	for _, permission := range []capability.Cap{
+		capability.CAP_SETUID,
+		capability.CAP_SETGID,
+		capability.CAP_SETFCAP,
+	} {
+		if cap.Get(capability.EFFECTIVE, permission) || cap.Get(capability.PERMITTED, permission) {
+			continue
+		}
+		permitted = false
+		break
+	}
+
+	return permitted
+}
 
 type PluginHost struct {
 	UnixSocket string
@@ -37,13 +80,16 @@ type PluginConfig struct {
 
 type PreloadPlugin struct {
 	File    string
+	Name    string
 	Domains []string
 }
 
 // might change this later
 const DEFAULT_PLUGIN_DIR = "plugs"
+const DEFAULT_CHROOT_DIR = "plugData"
 
 type GLoomConfig struct {
+	EnableChroot   bool            `toml:"enableChroot"`
 	PluginDir      string          `toml:"pluginDir"`
 	PreloadPlugins []PreloadPlugin `toml:"plugins"`
 }
@@ -51,8 +97,6 @@ type GLoomConfig struct {
 type GLoom struct {
 	config GLoomConfig
 
-	// path to the /tmp directory where the pluginHost sockets are created
-	tmpDir   string
 	gloomDir string
 
 	// maps plugin names to plugins
@@ -65,6 +109,8 @@ type GLoom struct {
 }
 
 func NewGloom(proxyManager *sentinel.ProxyManager) (*GLoom, error) {
+	log.SetOutput(os.Stderr)
+
 	gloomDir := os.Getenv("GLOOM_DIR")
 	if gloomDir == "" {
 		if os.Getenv("XDG_DATA_HOME") != "" {
@@ -106,11 +152,6 @@ func NewGloom(proxyManager *sentinel.ProxyManager) (*GLoom, error) {
 		return nil, err
 	}
 
-	tmpDir, err := os.MkdirTemp(os.TempDir(), "gloom")
-	if err != nil {
-		return nil, err
-	}
-
 	if _, err := os.Stat(filepath.Join(gloomDir, "pluginHost")); os.IsNotExist(err) {
 		if err := os.WriteFile(filepath.Join(gloomDir, "pluginHost"), pluginHost, 0755); err != nil {
 			return nil, err
@@ -120,7 +161,6 @@ func NewGloom(proxyManager *sentinel.ProxyManager) (*GLoom, error) {
 	}
 
 	gloom := &GLoom{
-		tmpDir:       tmpDir,
 		gloomDir:     gloomDir,
 		plugins:      libs.SyncMap[string, *PluginHost]{},
 		DB:           db,
@@ -132,6 +172,17 @@ func NewGloom(proxyManager *sentinel.ProxyManager) (*GLoom, error) {
 		return nil, err
 	}
 
+	if gloom.config.EnableChroot {
+		// make sure we have super user privileges
+		if !hasChrootAbility() {
+			return nil, fmt.Errorf("chroot is enabled, but you do not have the required privileges to use it")
+		}
+
+		if !hasChangeUserAbility() {
+			return nil, fmt.Errorf("chroot is enabled, but you do not have the required privileges to use it")
+		}
+	}
+
 	if err := os.MkdirAll(gloom.config.PluginDir, 0755); err != nil {
 		slog.Error("Failed to create pluginDir", "dir", gloom.config.PluginDir, "error", err)
 		return nil, err
@@ -141,13 +192,17 @@ func NewGloom(proxyManager *sentinel.ProxyManager) (*GLoom, error) {
 	if _, err := embeddedAssets.Open("dist/gloomi.so"); err == nil {
 		// and if the plugin doesn't exist, copy it over
 		// TODO: instead, check if the plugin doesnt exist OR the binary has a newer timestamp than the current version
-		if _, err := os.Stat(filepath.Join(gloom.config.PluginDir, "gloomi.so")); os.IsNotExist(err) {
+		if err := os.MkdirAll(path.Join(gloom.config.PluginDir, "GLoomI"), 0755); err != nil {
+			return nil, err
+		}
+
+		if _, err := os.Stat(path.Join(gloom.config.PluginDir, "GLoomI", "gloomi.so")); os.IsNotExist(err) {
 			gloomiData, err := embeddedAssets.ReadFile("dist/gloomi.so")
 			if err != nil {
 				return nil, err
 			}
 
-			if err := os.WriteFile(filepath.Join(gloom.config.PluginDir, "gloomi.so"), gloomiData, 0755); err != nil {
+			if err := os.WriteFile(path.Join(gloom.config.PluginDir, "GLoomI", "gloomi.so"), gloomiData, 0755); err != nil {
 				return nil, err
 			}
 		}
@@ -172,23 +227,31 @@ func (gloom *GLoom) loadConfig() error {
 		return err
 	}
 
-	slog.Debug("Loaded config", "config", gloom.config)
-
 	if gloom.config.PluginDir == "" {
 		gloom.config.PluginDir = DEFAULT_PLUGIN_DIR
 	}
 
 	gloom.config.PluginDir = filepath.Join(gloom.gloomDir, gloom.config.PluginDir)
 
+	slog.Debug("Loaded config", "config", gloom.config)
+
 	return nil
+}
+
+func (gloom *GLoom) Cleanup() error {
+	for _, plugin := range gloom.plugins.Keys() {
+		gloom.StopPlugin(plugin)
+	}
+
+	// return nil
 }
 
 func (gloom *GLoom) LoadInitialPlugins() error {
 	slog.Info("Loading initial plugins")
 
 	for _, plugin := range gloom.config.PreloadPlugins {
-		if err := gloom.RegisterPlugin(filepath.Join(gloom.config.PluginDir, plugin.File), plugin.File, plugin.Domains); err != nil {
-			panic(fmt.Errorf("failed to load preload plugin %s: %w (make sure its in %s)", plugin.File, err, gloom.config.PluginDir))
+		if err := gloom.RegisterPlugin(filepath.Join(gloom.config.PluginDir, plugin.Name, plugin.File), plugin.Name, plugin.Domains); err != nil {
+			panic(fmt.Errorf("failed to load preload plugin %s: %w (make sure its in %s)", plugin.Name, err, path.Join(gloom.config.PluginDir, plugin.Name)))
 		}
 	}
 
@@ -269,29 +332,64 @@ func (dt *MutexLock[T]) Unlock(id T) {
 var deploymentLock = NewMutexLock[string]()
 
 func (gloom *GLoom) RegisterPlugin(pluginPath string, name string, domains []string) (err error) {
+	for _, char := range name {
+		if !((char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9') || char == '-' || char == '_') {
+			return fmt.Errorf("invalid plugin name")
+		}
+	}
+
 	slog.Info("Registering plugin", "pluginPath", pluginPath, "domains", domains)
 
 	pathStr := strconv.FormatUint(uint64(rand.Uint64()), 16)
-	socketPath := path.Join(gloom.tmpDir, pathStr+".sock")
+	socketPath := path.Join(gloom.config.PluginDir, name, pathStr+".sock")
 
 	slog.Debug("Starting pluginHost", "pluginPath", pluginPath)
 
 	processPath := path.Join(gloom.gloomDir, "pluginHost")
 	args := []string{"--plugin-path", pluginPath, "--socket-path", socketPath}
 
+	if gloom.config.EnableChroot {
+		if err := os.MkdirAll(path.Join(gloom.config.PluginDir, name), 0755); err != nil {
+			return fmt.Errorf("failed to create chroot directory: %w", err)
+		}
+
+		args = append(args, "--chroot-dir", path.Join(gloom.config.PluginDir, name))
+	}
+
+	files, err := os.ReadDir(path.Join(gloom.config.PluginDir, name))
+	if err != nil {
+		return fmt.Errorf("failed to read pluginDir: %w", err)
+	}
+
+	slog.Debug("Removing dead sockets", "pluginDir", path.Join(gloom.config.PluginDir, name))
+
+	for _, file := range files {
+		if file.IsDir() {
+			continue
+		}
+
+		// remove all dead sockets
+		if strings.HasSuffix(file.Name(), ".sock") {
+			if err := os.Remove(path.Join(gloom.config.PluginDir, name, file.Name())); err != nil {
+				return fmt.Errorf("failed to remove socket: %w", err)
+			}
+		}
+	}
+
 	cmd := exec.Command(processPath, args...)
+
 	stderrPipe, err := cmd.StderrPipe()
 	if err != nil {
 		return fmt.Errorf("failed to get stderr pipe: %w", err)
 	}
 
+	reader := bufio.NewReader(stderrPipe)
+	readTimeout := time.After(30 * time.Second)
+
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start pluginHost: %w", err)
 	}
 	process := cmd.Process
-
-	reader := bufio.NewReader(stderrPipe)
-	readTimeout := time.After(30 * time.Second)
 
 	select {
 	case <-readTimeout:
@@ -317,6 +415,8 @@ func (gloom *GLoom) RegisterPlugin(pluginPath string, name string, domains []str
 			return fmt.Errorf("received unknown status from plugin: %s", status)
 		}
 	}
+
+	slog.Debug("Creating proxy", "socketPath", socketPath)
 
 	proxy, err := sentinel.NewDeploymentProxy(socketPath, NewUnixSocketTransport)
 	if err != nil {
@@ -368,10 +468,7 @@ func (gloom *GLoom) RegisterPlugin(pluginPath string, name string, domains []str
 	return nil
 }
 
-// removes plugin from proxy and kills the process
-func (gloom *GLoom) DeletePlugin(pluginName string) error {
-	slog.Debug("Deleting plugin", "pluginName", pluginName)
-
+func (gloom *GLoom) StopPlugin(pluginName string) error {
 	pluginHost, ok := gloom.plugins.Load(pluginName)
 	if !ok {
 		return fmt.Errorf("plugin not found")
@@ -388,6 +485,17 @@ func (gloom *GLoom) DeletePlugin(pluginName string) error {
 	}
 
 	gloom.plugins.Delete(pluginName)
+
+	return nil
+}
+
+// removes plugin from proxy and kills the process
+func (gloom *GLoom) DeletePlugin(pluginName string) error {
+	slog.Debug("Deleting plugin", "pluginName", pluginName)
+
+	if err := gloom.StopPlugin(pluginName); err != nil {
+		return err
+	}
 
 	var pluginPath string
 	if err := gloom.DB.QueryRow("SELECT path FROM plugins WHERE name = ?", pluginName).Scan(&pluginPath); err != nil {
@@ -457,14 +565,15 @@ func (rpc *GloomRPC) ListPlugins(_ struct{}, reply *[]PluginData) error {
 }
 
 type PluginUpload struct {
-	Name    string   `json:"name"`
-	Domains []string `json:"domains"`
-	Data    []byte   `json:"data"`
+	FileName string   `json:"fileName"`
+	Name     string   `json:"name"`
+	Domains  []string `json:"domains"`
+	Data     []byte   `json:"data"`
 }
 
 func (rpc *GloomRPC) UploadPlugin(plugin PluginUpload, reply *string) error {
 	for _, preloadPlugin := range rpc.gloom.config.PreloadPlugins {
-		if plugin.Name == preloadPlugin.File {
+		if plugin.Name == preloadPlugin.Name {
 			*reply = "Plugin is preloaded"
 			return nil
 		}
@@ -497,7 +606,7 @@ func (rpc *GloomRPC) UploadPlugin(plugin PluginUpload, reply *string) error {
 	defer deploymentLock.Unlock(plugin.Name)
 
 	slog.Info("Uploading plugin", "plugin", plugin.Name, "domains", plugin.Domains)
-	pluginPath, err := filepath.Abs(filepath.Join(rpc.gloom.config.PluginDir, (plugin.Name + ".so")))
+	pluginPath, err := filepath.Abs(filepath.Join(rpc.gloom.config.PluginDir, plugin.Name, plugin.FileName))
 	if err != nil {
 		*reply = "Plugin upload failed"
 		return err
@@ -567,6 +676,11 @@ func (rpc *GloomRPC) UploadPlugin(plugin PluginUpload, reply *string) error {
 		}
 	}
 
+	if err := os.MkdirAll(filepath.Join(rpc.gloom.config.PluginDir, plugin.Name), 0755); err != nil {
+		*reply = "Plugin upload failed"
+		return err
+	}
+
 	// regardless of if plugin exists or not, we'll upload the file since this could be an update to an existing plugin
 	if err := os.WriteFile(pluginPath, plugin.Data, 0644); err != nil {
 		*reply = "Plugin upload failed"
@@ -605,7 +719,7 @@ func (rpc *GloomRPC) UploadPlugin(plugin PluginUpload, reply *string) error {
 
 func (rpc *GloomRPC) DeletePlugin(pluginName string, reply *string) error {
 	for _, preloadPlugin := range rpc.gloom.config.PreloadPlugins {
-		if pluginName == preloadPlugin.File {
+		if pluginName == preloadPlugin.Name {
 			*reply = "Plugin is preloaded"
 			return nil
 		}
@@ -644,8 +758,10 @@ func main() {
 
 	gloom, err := NewGloom(proxyManager)
 	if err != nil {
-		panic(err)
+		fmt.Printf("Failed to create GLoom: %v\n", err)
+		os.Exit(1)
 	}
+	defer gloom.Cleanup()
 
 	if err := gloom.StartRPCServer(); err != nil {
 		panic("Failed to start RPC server: " + err.Error())

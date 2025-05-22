@@ -58,14 +58,19 @@ GLoom will also use a config file in the `GLOOM_DIR` to configure plugins and ot
 ```toml
 [[plugins]]
 file = "gloomi.so"
+name = "GLoomI"
 domains = ["localhost"]
 ```
 
-The `[[plugins]]` array is a list of plugins to preload. Each plugin is an object with the following fields:
+The config is in TOML and has the following keys:
 
-- `file` - The path to the plugin file. This is a string value.
-- `domains` - An array of domains to forward requests to this plugin. This is an array of strings.
-
+- `plugins` - An array of plugins to load. Each plugin is an object with the following keys:
+  - `file` - The name of the plugin file.
+  - `name` - The name of the plugin. Can only contain alphanumeric characters and `-` and `_`.
+  - `domains` - An array of domains to load the plugin on.
+- `pluginDir` - The directory to store plugins in relative to `GLOOM_DIR`. Defaults to `plugs`.
+- `enableChroot` - Whether to enable chroot, this forces plugins to a specific directory that they cannot escape.
+  Defaults to `false`.
 
 ## Usage
 

@@ -10,12 +10,15 @@ import (
 	"os/signal"
 	"path/filepath"
 	"plugin"
+	"strings"
+	"syscall"
 
 	"github.com/gofiber/fiber/v3"
 )
 
 var pluginPath string
 var socketPath string
+var chrootDir string
 
 // Idk why I originally wrote this solution when stderr is literally just the best solution for me, but this
 // makes the pluginHost more generally useful outside of GLoom, so I'm keeping it
@@ -47,13 +50,13 @@ func main() {
 
 		if router != nil {
 			if err := router.Shutdown(); err != nil {
-				log.Printf("Error shutting down router: %v", err)
+				log.Printf("Error: error shutting down router: %v", err)
 			}
 		}
 
 		if listener != nil {
 			if err := listener.Close(); err != nil {
-				log.Printf("Error closing listener: %v", err)
+				log.Printf("Error: error closing listener: %v", err)
 			}
 
 			os.Remove(socketPath)
@@ -70,10 +73,11 @@ func main() {
 	fs.StringVar(&pluginPath, "plugin-path", "", "Path to the plugin")
 	fs.StringVar(&socketPath, "socket-path", "", "Path to the socket")
 	fs.StringVar(&controlPath, "control-path", "", "Path to the control socket")
+	fs.StringVar(&chrootDir, "chroot-dir", "", "Path to the chroot directory")
 
 	err := fs.Parse(os.Args[1:])
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error parsing arguments: %v", err)
+		fmt.Fprintf(os.Stderr, "Error: error parsing arguments: %v", err)
 		os.Exit(1)
 	}
 	os.Args = fs.Args()
@@ -98,13 +102,13 @@ func main() {
 
 		controlListener, err := net.Listen("unix", controlPath)
 		if err != nil {
-			log.Fatalf("Error listening on control socket: %v", err)
+			log.Fatalf("Error: error listening on control socket: %v", err)
 		}
 		defer controlListener.Close()
 
 		conn, err := controlListener.Accept()
 		if err != nil {
-			log.Printf("Error accepting control connection: %v", err)
+			log.Printf("Error: error accepting control connection: %v", err)
 			return
 		}
 		defer conn.Close()
@@ -120,13 +124,13 @@ func main() {
 			os.Remove(controlPath)
 		}
 		if !ok {
-			log.Printf("Control connection is not a writer")
+			log.Printf("Error: control connection is not a writer")
 			return
 		}
 	}
 
 	if _, err := os.Stat(socketPath); err == nil {
-		Print("Error: Socket %s already exists", socketPath)
+		Print("Error: socket %s already exists", socketPath)
 		os.Exit(1)
 	}
 
@@ -134,6 +138,60 @@ func main() {
 	if err != nil {
 		Print("Error: could not get absolute plugin path: %v", err)
 		os.Exit(1)
+	}
+
+	if chrootDir != "" {
+		if !strings.HasPrefix(socketPath, chrootDir) {
+			Print("Error: socket path is not in the chroot directory, but chroot is enabled, and therefore the socket cannot be used by the plugin. This is a GLoom bug, please report it.")
+			os.Exit(1)
+		}
+
+		// we are chrooting and changing to nobody to "sandbox" the plugin
+		// nobodyUser, err := user.Lookup("nobody")
+		// if err != nil {
+		// 	Print("Error: failed to get nobody user: %w", err)
+		// }
+
+		// nobodyUid, err := strconv.Atoi(nobodyUser.Uid)
+		// if err != nil {
+		// 	Print("Error: failed to parse nobody uid: %w", err)
+		// }
+
+		// nobodyGid, err := strconv.Atoi(nobodyUser.Gid)
+		// if err != nil {
+		// 	Print("Error: failed to parse nobody gid: %w", err)
+		// }
+
+		pluginData, err := os.ReadFile(realPluginPath)
+		if err != nil {
+			Print("Error: failed to read plugin: %w", err)
+		}
+
+		pluginFileName := filepath.Base(realPluginPath)
+
+		// copy the plugin to the chroot directory
+		if err := os.WriteFile(filepath.Join(chrootDir, pluginFileName), pluginData, 0644); err != nil {
+			Print("Error: failed to copy plugin to chroot: %w", err)
+		}
+
+		// if err := os.Chown(chrootDir, nobodyUid, nobodyGid); err != nil {
+		// 	Print("Error: failed to chown chroot directory: %w", err)
+		// }
+
+		realPluginPath = "/" + pluginFileName
+		socketPath = "/" + filepath.Base(socketPath)
+
+		if err := syscall.Chroot(chrootDir); err != nil {
+			Print("Error: failed to chroot: %w", err)
+		}
+
+		// if err := syscall.Setgid(nobodyGid); err != nil {
+		// 	Print("Error: failed to setgid: %w", err)
+		// }
+
+		// if err := syscall.Setuid(nobodyUid); err != nil {
+		// 	Print("Error: failed to setuid: %w", err)
+		// }
 	}
 
 	p, err := plugin.Open(realPluginPath)

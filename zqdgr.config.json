@@ -6,8 +6,8 @@
     "license": "MIT",
     "scripts": {
         "build": "zqdgr build:gloomi && zqdgr build:gloom",
-        "build:pluginHost": "sh -c \"cd pluginHost; go build -ldflags '-w -s' -o ../dist/host main.go\"",
-        "build:gloomi": "sh -c \"cd gloomi; zqdgr build\"",
+        "build:pluginHost": "cd pluginHost; go build -ldflags '-w -s' -o ../dist/host main.go",
+        "build:gloomi": "cd gloomi; zqdgr build",
         "build:gloom": "zqdgr build:pluginHost && go build -tags=gloomi -o dist/gloom",
         "build:nogloomi": "zqdgr build:pluginHost && go build -tags=!gloomi -o dist/gloom",
         "clean": "rm -rf dist && rm -rf plugin/plugin.so",

@@ -11,5 +11,6 @@ var embeddedAssets embed.FS
 var defaultConfig = []byte(`
 [[plugins]]
 file = "gloomi.so"
+name = "GLoomI"
 domains = ["localhost"]
 `)
