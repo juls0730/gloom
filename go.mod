@@ -7,7 +7,7 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.24
 )
 
-require github.com/syndtr/gocapability v0.0.0-20200815063812-42c35b437635 // indirect
+require github.com/syndtr/gocapability v0.0.0-20200815063812-42c35b437635
 
 require (
 	github.com/BurntSushi/toml v1.5.0

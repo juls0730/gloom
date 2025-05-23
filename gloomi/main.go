@@ -6,6 +6,7 @@ import (
 	"mime/multipart"
 	"net/rpc"
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v3"
 )
@@ -132,3 +133,4 @@ func (p *GLoomI) RegisterRoutes(router fiber.Router) {
 
 // Exported symbol
 var Plugin GLoomI
+var Version = time.Now()

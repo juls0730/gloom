@@ -14,5 +14,6 @@
         "dev": "zqdgr build && ./dist/gloom"
     },
     "pattern": "**/*.go",
+    "shutdown_signal": "SIGINT",
     "excluded_dirs": []
 }
