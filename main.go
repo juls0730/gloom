@@ -67,6 +67,48 @@ func hasChangeUserAbility() bool {
 	return permitted
 }
 
+func IsExecutableNewer(filePath string) bool {
+	// Get the location of the gloom binary
+	gloomPath, err := os.Executable()
+	if err != nil {
+		return false
+	}
+
+	gloomPath, err = filepath.EvalSymlinks(gloomPath)
+	if err != nil {
+		return false
+	}
+
+	fileInfo, err := os.Stat(gloomPath)
+	if err != nil {
+		return false
+	}
+
+	childInfo, err := os.Stat(filePath)
+	if err != nil {
+		return false
+	}
+
+	return fileInfo.ModTime().After(childInfo.ModTime())
+}
+
+func hasChangeResourceLimitAbility() bool {
+	cap, err := capability.NewPid2(0)
+	if err != nil {
+		return false
+	}
+
+	err = cap.Load()
+	if err != nil {
+		return false
+	}
+
+	return cap.Get(capability.EFFECTIVE, capability.CAP_SYS_RESOURCE) || cap.Get(capability.PERMITTED, capability.CAP_SYS_RESOURCE)
+}
+
+// this is the default for user 1000 on my system
+const NOFILE_LIMIT = 1048576
+
 type PluginHost struct {
 	UnixSocket string
 	Process    *os.Process
@@ -151,12 +193,24 @@ func NewGloom(proxyManager *sentinel.ProxyManager) (*GLoom, error) {
 		return nil, err
 	}
 
-	if _, err := os.Stat(filepath.Join(gloomDir, "pluginHost")); os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(gloomDir, "pluginHost")); err != nil {
 		if err := os.WriteFile(filepath.Join(gloomDir, "pluginHost"), pluginHost, 0755); err != nil {
 			return nil, err
 		}
 
 		slog.Debug("Wrote pluginHost", "dir", filepath.Join(gloomDir, "pluginHost"))
+	} else {
+		if IsExecutableNewer(filepath.Join(gloomDir, "pluginHost")) {
+			slog.Debug("Replacing pluginHost", "dir", filepath.Join(gloomDir, "pluginHost"), "reason", "host is old")
+
+			if err := os.WriteFile(filepath.Join(gloomDir, "pluginHost"), pluginHost, 0755); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	if err := os.Chmod(filepath.Join(gloomDir, "pluginHost"), 0777); err != nil {
+		return nil, err
 	}
 
 	gloom := &GLoom{
@@ -180,6 +234,10 @@ func NewGloom(proxyManager *sentinel.ProxyManager) (*GLoom, error) {
 		if !hasChangeUserAbility() {
 			return nil, fmt.Errorf("chroot is enabled, but you do not have the required privileges to use it")
 		}
+
+		if !hasChangeResourceLimitAbility() {
+			return nil, fmt.Errorf("chroot is enabled, but you do not have the required privileges to use it")
+		}
 	}
 
 	if err := os.MkdirAll(gloom.config.PluginDir, 0755); err != nil {
@@ -189,20 +247,32 @@ func NewGloom(proxyManager *sentinel.ProxyManager) (*GLoom, error) {
 
 	// if gloomi is built into the binary
 	if _, err := embeddedAssets.Open("dist/gloomi.so"); err == nil {
-		// and if the plugin doesn't exist, copy it over
-		// TODO: instead, check if the plugin doesnt exist OR the binary has a newer timestamp than the current version
+		// ensure the plugin directory exists
 		if err := os.MkdirAll(filepath.Join(gloom.config.PluginDir, "GLoomI"), 0755); err != nil {
 			return nil, err
 		}
 
-		if _, err := os.Stat(filepath.Join(gloom.config.PluginDir, "GLoomI", "gloomi.so")); os.IsNotExist(err) {
-			gloomiData, err := embeddedAssets.ReadFile("dist/gloomi.so")
-			if err != nil {
-				return nil, err
-			}
+		gloomiData, err := embeddedAssets.ReadFile("dist/gloomi.so")
+		if err != nil {
+			return nil, err
+		}
+
+		gloomiPath := filepath.Join(gloom.config.PluginDir, "GLoomI", "gloomi.so")
+
+		if _, err := os.Stat(gloomiPath); err != nil {
+			// if the plugin doesn't exist, copy it over
+			slog.Debug("Replacing gloomi", "pluginPath", gloomiPath, "reason", "plugin doesnt exist")
 
 			if err := os.WriteFile(filepath.Join(gloom.config.PluginDir, "GLoomI", "gloomi.so"), gloomiData, 0755); err != nil {
 				return nil, err
+			}
+		} else {
+			if IsExecutableNewer(gloomiPath) {
+				slog.Debug("Replacing gloomi", "pluginPath", gloomiPath, "reason", "plugin is old")
+
+				if err := os.WriteFile(gloomiPath, gloomiData, 0755); err != nil {
+					return nil, err
+				}
 			}
 		}
 	}
@@ -249,16 +319,16 @@ func (gloom *GLoom) LoadInitialPlugins() error {
 	slog.Info("Loading initial plugins")
 
 	for _, plugin := range gloom.config.PreloadPlugins {
-		// if plugin is in PluginDir, we should move it to its named folder
+		// if a plugin is marked as preload, but its not organized in the way that GLoom would set it up, we should move
+		// the plugin to its named folder
 		if _, err := os.Stat(filepath.Join(gloom.config.PluginDir, plugin.File)); err == nil {
 			slog.Debug("Moving plugin to its named folder", "plugin", plugin.File)
-
 			if err := os.MkdirAll(filepath.Join(gloom.config.PluginDir, plugin.Name), 0755); err != nil {
-				panic(fmt.Errorf("failed to create plugin folder: %w", err))
+				return fmt.Errorf("failed to create plugin folder: %w", err)
 			}
 
 			if err := os.Rename(filepath.Join(gloom.config.PluginDir, plugin.File), filepath.Join(gloom.config.PluginDir, plugin.Name, plugin.File)); err != nil {
-				panic(fmt.Errorf("failed to move plugin to its named folder: %w", err))
+				return fmt.Errorf("failed to move plugin to its named folder: %w", err)
 			}
 		}
 
@@ -266,7 +336,7 @@ func (gloom *GLoom) LoadInitialPlugins() error {
 
 		path := filepath.Join(gloom.config.PluginDir, plugin.Name, plugin.File)
 		if err := gloom.RegisterPlugin(path, plugin.Name, plugin.Domains); err != nil {
-			panic(fmt.Errorf("failed to load preload plugin %s: %w (make sure its in %s)", plugin.Name, err, path))
+			return fmt.Errorf("failed to load preload plugin %s: %w (make sure its in %s)", plugin.Name, err, path)
 		}
 	}
 
@@ -436,7 +506,7 @@ func (gloom *GLoom) RegisterPlugin(pluginPath string, name string, domains []str
 		status = strings.TrimSpace(status)
 
 		if status == "ready" {
-			slog.Debug("PluginHost ported ready", "pluginPath", pluginPath)
+			slog.Debug("PluginHost ready", "pluginPath", pluginPath, "hostPid", process.Pid)
 			break
 		} else if strings.HasPrefix(status, "Error: ") {
 			errorMessage := strings.TrimPrefix(status, "Error: ")
@@ -773,10 +843,8 @@ func (rpc *GloomRPC) DeletePlugin(pluginName string, reply *string) error {
 }
 
 func main() {
-	debug, err := strconv.ParseBool(os.Getenv("DEBUG"))
-	if err != nil {
-		debug = false
-	}
+	// no need to check error value, it will always be a valid bool
+	debug, _ := strconv.ParseBool(os.Getenv("DEBUG"))
 
 	level := slog.LevelInfo
 	if debug {
@@ -796,14 +864,20 @@ func main() {
 	defer gloom.Cleanup()
 
 	if err := gloom.StartRPCServer(); err != nil {
-		panic("Failed to start RPC server: " + err.Error())
+		slog.Error("Failed to start RPC server", "error", err)
+		os.Exit(1)
 	}
 
-	gloom.LoadInitialPlugins()
+	err = gloom.LoadInitialPlugins()
+	if err != nil {
+		slog.Error("Failed to load initial plugins", "error", err)
+		os.Exit(1)
+	}
 
 	slog.Info("Server running at http://localhost:3000")
 	if err := gloom.ProxyManager.ListenAndServe("127.0.0.1:3000"); err != nil {
-		panic(err)
+		slog.Error("Failed to start proxy server", "error", err)
+		os.Exit(1)
 	}
 }
 

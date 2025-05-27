@@ -8,8 +8,10 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"os/user"
 	"path/filepath"
 	"plugin"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -147,51 +149,63 @@ func main() {
 		}
 
 		// we are chrooting and changing to nobody to "sandbox" the plugin
-		// nobodyUser, err := user.Lookup("nobody")
-		// if err != nil {
-		// 	Print("Error: failed to get nobody user: %w", err)
-		// }
-
-		// nobodyUid, err := strconv.Atoi(nobodyUser.Uid)
-		// if err != nil {
-		// 	Print("Error: failed to parse nobody uid: %w", err)
-		// }
-
-		// nobodyGid, err := strconv.Atoi(nobodyUser.Gid)
-		// if err != nil {
-		// 	Print("Error: failed to parse nobody gid: %w", err)
-		// }
-
-		pluginData, err := os.ReadFile(realPluginPath)
+		nobodyUser, err := user.Lookup("nobody")
 		if err != nil {
-			Print("Error: failed to read plugin: %w", err)
+			Print("Error: failed to get nobody user: %w", err)
 		}
 
-		pluginFileName := filepath.Base(realPluginPath)
-
-		// copy the plugin to the chroot directory
-		if err := os.WriteFile(filepath.Join(chrootDir, pluginFileName), pluginData, 0644); err != nil {
-			Print("Error: failed to copy plugin to chroot: %w", err)
+		nobodyUid, err := strconv.Atoi(nobodyUser.Uid)
+		if err != nil {
+			Print("Error: failed to parse nobody uid: %w", err)
 		}
 
-		// if err := os.Chown(chrootDir, nobodyUid, nobodyGid); err != nil {
-		// 	Print("Error: failed to chown chroot directory: %w", err)
-		// }
+		nobodyGid, err := strconv.Atoi(nobodyUser.Gid)
+		if err != nil {
+			Print("Error: failed to parse nobody gid: %w", err)
+		}
 
-		realPluginPath = "/" + pluginFileName
+		if err := os.Chown(chrootDir, nobodyUid, nobodyGid); err != nil {
+			Print("Error: failed to chown chroot directory: %w", err)
+		}
+
+		if err := os.Chown(realPluginPath, nobodyUid, nobodyGid); err != nil {
+			Print("Error: failed to chown plugin directory: %w", err)
+		}
+
+		chrootTmp := filepath.Join(chrootDir, "tmp")
+
+		if err := os.RemoveAll(chrootTmp); err != nil {
+			Print("Error: failed to remove chroot tmp directory: %w", err)
+		}
+
+		if err := os.MkdirAll(chrootTmp, 0755); err != nil {
+			Print("Error: failed to create chroot tmp directory: %w", err)
+		}
+
+		// we could bind os.TempDir() to chrootTmp, but that would allow for plugins to read eachothers temp files, so
+		// instead we'll create a new temp directory specifically for the plugin that gets clearned on exit and startup.
+		defer func() {
+			os.RemoveAll(chrootTmp)
+		}()
+
+		realPluginPath = "/" + filepath.Base(realPluginPath)
 		socketPath = "/" + filepath.Base(socketPath)
 
 		if err := syscall.Chroot(chrootDir); err != nil {
 			Print("Error: failed to chroot: %w", err)
 		}
 
-		// if err := syscall.Setgid(nobodyGid); err != nil {
-		// 	Print("Error: failed to setgid: %w", err)
-		// }
+		if err := syscall.Chdir("/"); err != nil {
+			Print("Error: failed to chdir: %w", err)
+		}
 
-		// if err := syscall.Setuid(nobodyUid); err != nil {
-		// 	Print("Error: failed to setuid: %w", err)
-		// }
+		if err := syscall.Setgid(nobodyGid); err != nil {
+			Print("Error: failed to setgid: %w", err)
+		}
+
+		if err := syscall.Setuid(nobodyUid); err != nil {
+			Print("Error: failed to setuid: %w", err)
+		}
 	}
 
 	p, err := plugin.Open(realPluginPath)
@@ -230,6 +244,11 @@ func main() {
 	listener, err = net.Listen("unix", socketPath)
 	if err != nil {
 		Print("Error: error listening on socket %s: %v", socketPath, err)
+		os.Exit(1)
+	}
+
+	if err := os.Chmod(socketPath, 0666); err != nil {
+		Print("Error: failed to chmod socket: %v", err)
 		os.Exit(1)
 	}
 
